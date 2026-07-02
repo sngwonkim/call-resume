@@ -11,12 +11,16 @@ export async function POST(req: NextRequest) {
 
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('call_sessions')
-    .select('transcript')
+    .select('transcript, workspace_id')
     .eq('id', session_id)
     .single()
 
-  if (sessionError) {
-    return NextResponse.json({ error: '세션을 찾을 수 없어요', detail: sessionError.message }, { status: 404 })
+  if (sessionError || !session) {
+    return NextResponse.json({ error: '세션을 찾을 수 없어요' }, { status: 404 })
+  }
+
+  if (session.workspace_id !== workspace_id) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   }
 
   await supabaseAdmin

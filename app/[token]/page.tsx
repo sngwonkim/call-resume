@@ -45,7 +45,7 @@ export default function GuidePage({ params }: Props) {
         {/* 서비스 소개 */}
         <div className="bg-neutral-900 rounded-2xl p-6 mb-6">
           <p className="text-neutral-300 leading-relaxed text-sm">
-            안녕하세요, 개발 시점 기준 취준 중인 사람입니다. 이력 정리를 위한 글쓰기보다 친구와의 경험에 대한 수다가 훨씬 쉬운 점에서 착안하여 통화하며 이야기하면 이력을 위한 글로 정리해주는 서비스를 만들었습니다. 좋은 결과 있길 기원합니다! 화이팅!
+            안녕하세요, 개발 시점 기준 취준 중인 사람입니다. 이력 정리를 위한 글쓰기보다 친구와의 수다가 훨씬 쉬운 점에서 착안하여, 통화하듯 떠들면 글로 아주 잘 정리해주는 서비스를 만들었습니다. 좋은 결과 있길 기원합니다! 화이팅!
           </p>
         </div>
 

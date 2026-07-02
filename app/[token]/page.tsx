@@ -3,74 +3,25 @@
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { ResumeItem, JobTag, Category, CATEGORIES, JOB_TAGS } from '@/types'
 
 interface Props {
   params: Promise<{ token: string }>
 }
 
-export default function DashboardPage({ params }: Props) {
+export default function GuidePage({ params }: Props) {
   const { token } = use(params)
-
-  const [items, setItems] = useState<ResumeItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [selectedTags, setSelectedTags] = useState<JobTag[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all')
+  const [valid, setValid] = useState<boolean | null>(null)
 
   useEffect(() => {
-    const load = async () => {
-      const { data: workspace } = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('token', token)
-        .single()
-
-      if (!workspace) {
-        setError('유효하지 않은 링크예요')
-        setLoading(false)
-        return
-      }
-
-      const { data } = await supabase
-        .from('resume_items')
-        .select('*')
-        .eq('workspace_id', workspace.id)
-        .order('created_at', { ascending: false })
-
-      setItems(data ?? [])
-      setLoading(false)
-    }
-    load()
+    supabase
+      .from('workspaces')
+      .select('id')
+      .eq('token', token)
+      .single()
+      .then(({ data }) => setValid(!!data))
   }, [token])
 
-  const toggleTag = (tag: JobTag) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    )
-  }
-
-  const filtered = items.filter((item) => {
-    const categoryMatch = selectedCategory === 'all' || item.category === selectedCategory
-    const tagMatch = selectedTags.length === 0 || selectedTags.some((t) => item.job_tags.includes(t))
-    return categoryMatch && tagMatch
-  })
-
-  const exportMarkdown = () => {
-    const lines = filtered.map((item) =>
-      `## [${item.category}] ${item.job_tags.join(', ')}\n\n${item.content}\n\n**키워드:** ${item.keywords.join(', ')}\n`
-    )
-    const md = `# 이력서 재료\n\n${lines.join('\n---\n\n')}`
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'resume_materials.md'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  if (loading) {
+  if (valid === null) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-neutral-950">
         <p className="text-neutral-500">불러오는 중...</p>
@@ -78,131 +29,54 @@ export default function DashboardPage({ params }: Props) {
     )
   }
 
-  if (error) {
+  if (!valid) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-neutral-950 px-4">
-        <p className="text-red-400">{error}</p>
+        <p className="text-red-400">유효하지 않은 링크예요</p>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-white font-bold text-xl">call_resume</h1>
-          <div className="flex gap-3">
-            {filtered.length > 0 && (
-              <button
-                onClick={exportMarkdown}
-                className="px-4 py-2 rounded-xl bg-neutral-800 text-neutral-300 text-sm hover:bg-neutral-700 transition"
-              >
-                .md 내보내기
-              </button>
-            )}
-            <Link
-              href={`/${token}/call`}
-              className="px-4 py-2 rounded-xl bg-white text-black text-sm font-semibold hover:bg-neutral-200 transition"
-            >
-              🎙️ 새 통화
-            </Link>
-          </div>
+    <main className="min-h-screen bg-neutral-950 px-6 py-12">
+      <div className="max-w-xl mx-auto">
+        <h1 className="text-white font-bold text-xl mb-10">call_resume</h1>
+
+        {/* 서비스 소개 */}
+        <div className="bg-neutral-900 rounded-2xl p-6 mb-6">
+          <p className="text-neutral-300 leading-relaxed text-sm">
+            안녕하세요, 개발 시점 기준 취준 중인 사람입니다. 이력 정리를 위한 글쓰기보다 친구와의 경험에 대한 수다가 훨씬 쉬운 점에서 착안하여 통화하며 이야기하면 이력을 위한 글로 정리해주는 서비스를 만들었습니다. 좋은 결과 있길 기원합니다! 화이팅!
+          </p>
         </div>
 
-        {/* 카테고리 필터 */}
-        <div className="flex gap-2 flex-wrap mb-4">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-3 py-1.5 rounded-lg text-sm transition ${
-              selectedCategory === 'all'
-                ? 'bg-white text-black font-medium'
-                : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
-            }`}
-          >
-            전체
-          </button>
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-sm transition ${
-                selectedCategory === cat
-                  ? 'bg-white text-black font-medium'
-                  : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* 직무 태그 필터 */}
-        <div className="flex gap-2 flex-wrap mb-8">
-          {JOB_TAGS.map((tag) => (
-            <button
-              key={tag}
-              onClick={() => toggleTag(tag)}
-              className={`px-3 py-1 rounded-full text-xs transition ${
-                selectedTags.includes(tag)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-neutral-800 text-neutral-500 hover:bg-neutral-700'
-              }`}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-
-        {/* 아이템 목록 */}
-        {filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-neutral-600 mb-4">
-              {items.length === 0 ? '아직 정리된 내용이 없어요 :)' : '필터에 맞는 항목이 없어요'}
-            </p>
-            {items.length === 0 && (
-              <Link
-                href={`/${token}/call`}
-                className="px-6 py-3 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 transition"
-              >
-                첫 통화 시작하기
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filtered.map((item) => (
-              <div key={item.id} className="rounded-2xl bg-neutral-900 p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-xs font-medium px-2 py-1 rounded-lg bg-neutral-800 text-neutral-400">
-                    {item.category}
-                  </span>
-                  <div className="flex gap-1 flex-wrap justify-end ml-2">
-                    {item.job_tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-400"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-neutral-300 text-sm leading-relaxed whitespace-pre-wrap mb-3">
-                  {item.content}
-                </div>
-                {item.keywords.length > 0 && (
-                  <div className="flex gap-1.5 flex-wrap">
-                    {item.keywords.map((kw) => (
-                      <span key={kw} className="text-xs text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded">
-                        #{kw}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+        {/* 사용법 */}
+        <div className="bg-neutral-900 rounded-2xl p-6 mb-8 space-y-4">
+          <h2 className="text-white font-semibold text-base mb-4">사용 방법</h2>
+          <ol className="space-y-3">
+            {[
+              '통화는 경험/프로젝트 단위로 진행해주세요.',
+              '포맷을 적절히 채우는 데에 필요한 정보를 얻기 위해 꼬리질문을 던질 수 있습니다.',
+              '발화를 5초 이상 중단하면 다음 질문으로 넘어갈 수 있지만, 자연스럽게 대화하듯 "아 앞에 질문 마저 대답할게" 하고 계속하셔도 됩니다.',
+              '통화를 종료하면, 처리 과정을 거친 후 포맷팅된 내용이 나옵니다.',
+              '간단히 수정 가능합니다.',
+              '.md 파일로 저장 가능합니다.',
+              '진행하시려면 통화 버튼을 눌러 전화를 걸어주세요.',
+            ].map((text, i) => (
+              <li key={i} className="flex gap-3 text-sm text-neutral-400 leading-relaxed">
+                <span className="text-neutral-600 shrink-0 font-mono">{i + 1}.</span>
+                <span>{text}</span>
+              </li>
             ))}
-          </div>
-        )}
+          </ol>
+        </div>
+
+        {/* 통화 시작 버튼 */}
+        <Link
+          href={`/${token}/call`}
+          className="block w-full py-4 rounded-2xl bg-white text-black font-semibold text-center hover:bg-neutral-200 transition"
+        >
+          통화 시작하기
+        </Link>
       </div>
     </main>
   )

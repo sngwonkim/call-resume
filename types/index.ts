@@ -52,3 +52,12 @@ export interface ResumeItem {
   job_tags: JobTag[]
   created_at: string
 }
+
+export interface Experience {
+  id: string
+  workspace_id: string
+  session_id: string | null
+  title: string
+  content: string
+  created_at: string
+}

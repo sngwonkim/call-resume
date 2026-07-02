@@ -9,12 +9,19 @@ interface Props {
   params: Promise<{ token: string }>
 }
 
-const SILENCE_REACTIONS = [
-  '응, 계속해봐요 :)',
-  '듣고 있어요, 계속해요 :)',
-  '오 그래서요? 계속해봐요!',
-  '음... 더 있어요? :)',
-]
+type Step = 'naming' | 'idle' | 'recording' | 'followup' | 'answering' | 'processing' | 'done' | 'error'
+
+interface QA {
+  q: string
+  a: string
+}
+
+function formatDate(d: Date) {
+  const yy = d.getFullYear().toString().slice(2)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yy}${mm}${dd}`
+}
 
 export default function CallPage({ params }: Props) {
   const { token } = use(params)
@@ -22,12 +29,14 @@ export default function CallPage({ params }: Props) {
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [status, setStatus] = useState<'idle' | 'recording' | 'finishing' | 'done' | 'error'>('idle')
+  const [step, setStep] = useState<Step>('naming')
+  const [experienceName, setExperienceName] = useState('')
   const [transcript, setTranscript] = useState('')
   const [interimText, setInterimText] = useState('')
-  const [reaction, setReaction] = useState('')
-  const [error, setError] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [questions, setQuestions] = useState<string[]>([])
+  const [answers, setAnswers] = useState<string[]>([])
+  const [error, setError] = useState('')
 
   const speechRef = useRef<ReturnType<typeof createSpeechRecognition>>(null)
   const fullTranscriptRef = useRef('')
@@ -46,10 +55,10 @@ export default function CallPage({ params }: Props) {
       .select('id')
       .eq('token', token)
       .single()
-      .then(({ data, error }) => {
-        if (error || !data) {
+      .then(({ data, error: err }) => {
+        if (err || !data) {
           setError('유효하지 않은 링크예요')
-          setStatus('error')
+          setStep('error')
           return
         }
         setWorkspaceId(data.id)
@@ -63,21 +72,22 @@ export default function CallPage({ params }: Props) {
   }, [transcript, interimText])
 
   const startCall = async () => {
-    if (!workspaceId) return
+    if (!workspaceId || !experienceName.trim()) return
 
-    const { data: session, error } = await supabase
+    const { data: session, error: err } = await supabase
       .from('call_sessions')
       .insert({ workspace_id: workspaceId, status: 'recording', transcript: '' })
       .select('id')
       .single()
 
-    if (error || !session) {
+    if (err || !session) {
       setError('세션 시작 실패')
+      setStep('error')
       return
     }
 
     setSessionId(session.id)
-    setStatus('recording')
+    setStep('recording')
     fullTranscriptRef.current = ''
     setElapsedSeconds(0)
     timerRef.current = setInterval(() => setElapsedSeconds(prev => prev + 1), 1000)
@@ -92,14 +102,10 @@ export default function CallPage({ params }: Props) {
           setInterimText(text)
         }
       },
-      onSilence: () => {
-        const pick = SILENCE_REACTIONS[Math.floor(Math.random() * SILENCE_REACTIONS.length)]
-        setReaction(pick)
-        setTimeout(() => setReaction(''), 3000)
-      },
+      onSilence: () => {},
       onError: (msg) => {
         setError(msg)
-        setStatus('error')
+        setStep('error')
       },
     })
 
@@ -110,31 +116,65 @@ export default function CallPage({ params }: Props) {
   const endCall = async () => {
     speechRef.current?.stop()
     if (timerRef.current) clearInterval(timerRef.current)
-    setStatus('finishing')
 
-    if (!sessionId || !workspaceId) return
+    if (!sessionId) return
 
     await supabase
       .from('call_sessions')
       .update({ transcript: fullTranscriptRef.current })
       .eq('id', sessionId)
 
-    const res = await fetch('/api/process', {
+    setStep('followup')
+
+    const res = await fetch('/api/follow-up', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, workspace_id: workspaceId }),
+      body: JSON.stringify({
+        transcript: fullTranscriptRef.current,
+        experience_name: experienceName,
+      }),
     })
 
     if (res.ok) {
-      setStatus('done')
-      setTimeout(() => router.push(`/${token}`), 2000)
+      const data = await res.json()
+      setQuestions(data.questions ?? [])
+      setAnswers((data.questions ?? []).map(() => ''))
+    } else {
+      setQuestions([])
+      setAnswers([])
+    }
+    setStep('answering')
+  }
+
+  const submitAnswers = async () => {
+    if (!sessionId || !workspaceId) return
+    setStep('processing')
+
+    const followUpQAs: QA[] = questions.map((q, i) => ({ q, a: answers[i] ?? '' }))
+    const date = formatDate(new Date())
+
+    const res = await fetch('/api/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        workspace_id: workspaceId,
+        experience_name: experienceName,
+        follow_up_qas: followUpQAs,
+        date,
+      }),
+    })
+
+    if (res.ok) {
+      setStep('done')
+      setTimeout(() => router.push(`/${token}/result/${sessionId}`), 1500)
     } else {
       setError('정리 중 오류가 발생했어요')
-      setStatus('error')
+      setStep('error')
     }
   }
 
-  if (status === 'error') {
+  if (step === 'error') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black px-4">
         <div className="text-center">
@@ -147,7 +187,7 @@ export default function CallPage({ params }: Props) {
     )
   }
 
-  if (status === 'done') {
+  if (step === 'done') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black px-4">
         <div className="text-center">
@@ -157,13 +197,13 @@ export default function CallPage({ params }: Props) {
             </svg>
           </div>
           <p className="text-white text-xl font-semibold">정리 완료</p>
-          <p className="text-white/40 mt-2 text-sm">대시보드로 이동할게요</p>
+          <p className="text-white/40 mt-2 text-sm">결과 페이지로 이동할게요</p>
         </div>
       </main>
     )
   }
 
-  if (status === 'finishing') {
+  if (step === 'processing') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black px-4">
         <div className="text-center">
@@ -173,29 +213,111 @@ export default function CallPage({ params }: Props) {
             </svg>
           </div>
           <p className="text-white text-lg font-medium">정리하는 중이에요</p>
-          <p className="text-white/40 mt-1 text-sm">AI가 내용을 분류하고 있어요</p>
+          <p className="text-white/40 mt-1 text-sm">AI가 포맷에 맞게 작성하고 있어요</p>
         </div>
       </main>
     )
   }
 
-  // idle & recording
+  /* 꼬리질문 답변 화면 */
+  if (step === 'followup' || step === 'answering') {
+    const loading = step === 'followup'
+    return (
+      <main className="min-h-screen bg-neutral-950 px-6 py-12">
+        <div className="max-w-xl mx-auto">
+          <h2 className="text-white font-semibold text-lg mb-2">보충 질문</h2>
+          <p className="text-neutral-500 text-sm mb-8">
+            포맷을 더 잘 채우기 위한 질문이에요. 모르면 비워두셔도 됩니다.
+          </p>
+
+          {loading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-neutral-900 rounded-2xl p-5 animate-pulse">
+                  <div className="h-4 bg-neutral-800 rounded w-3/4 mb-3" />
+                  <div className="h-16 bg-neutral-800 rounded" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {questions.map((q, i) => (
+                <div key={i} className="bg-neutral-900 rounded-2xl p-5">
+                  <p className="text-neutral-300 text-sm mb-3">{q}</p>
+                  <textarea
+                    value={answers[i]}
+                    onChange={(e) => {
+                      const next = [...answers]
+                      next[i] = e.target.value
+                      setAnswers(next)
+                    }}
+                    rows={3}
+                    placeholder="답변을 입력해주세요 (선택)"
+                    className="w-full bg-neutral-800 text-white text-sm rounded-xl px-4 py-3 resize-none placeholder-neutral-600 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && (
+            <button
+              onClick={submitAnswers}
+              className="mt-8 w-full py-4 rounded-2xl bg-white text-black font-semibold hover:bg-neutral-200 transition"
+            >
+              정리 시작하기
+            </button>
+          )}
+        </div>
+      </main>
+    )
+  }
+
+  /* 경험명 입력 화면 */
+  if (step === 'naming') {
+    return (
+      <main className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+        <div className="w-full max-w-sm">
+          <h2 className="text-white text-xl font-semibold mb-2 text-center">어떤 경험인가요?</h2>
+          <p className="text-white/40 text-sm text-center mb-8">
+            프로젝트나 경험의 이름을 간단히 적어주세요
+          </p>
+          <input
+            type="text"
+            value={experienceName}
+            onChange={(e) => setExperienceName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && experienceName.trim() && workspaceId) setStep('idle')
+            }}
+            placeholder="예: 대학 축제 기획, 인턴십 프로젝트"
+            className="w-full px-4 py-3 rounded-xl bg-neutral-900 border border-neutral-800 text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-600 transition mb-4"
+            autoFocus
+          />
+          <button
+            onClick={() => setStep('idle')}
+            disabled={!experienceName.trim() || !workspaceId}
+            className="w-full py-3 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-40 transition"
+          >
+            다음
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  /* idle & recording 화면 */
   return (
     <main className="min-h-screen bg-black flex flex-col items-center justify-between py-16 px-6 select-none">
-
-      {/* 상단 정보 */}
       <div className="text-center">
-        {status === 'idle'
-          ? <p className="text-white/40 text-sm tracking-wide">수신 전화</p>
+        {step === 'idle'
+          ? <p className="text-white/30 text-xs tracking-wide">{experienceName}</p>
           : <p className="text-green-400 text-sm font-mono tracking-widest">{formatTime(elapsedSeconds)}</p>
         }
       </div>
 
-      {/* 중앙: 아바타 + 이름 + 상태 */}
       <div className="flex flex-col items-center gap-5">
-        {/* 아바타 - idle이면 pulse 링 */}
         <div className="relative flex items-center justify-center">
-          {status === 'idle' && (
+          {step === 'idle' && (
             <>
               <span className="absolute w-36 h-36 rounded-full bg-white/5 animate-ping" />
               <span className="absolute w-28 h-28 rounded-full bg-white/10" />
@@ -211,12 +333,11 @@ export default function CallPage({ params }: Props) {
         <div className="text-center">
           <h1 className="text-white text-3xl font-semibold tracking-tight">call_resume</h1>
           <p className="text-white/40 text-base mt-1">
-            {status === 'idle' ? '이력서 AI' : reaction || '말하고 있어요...'}
+            {step === 'idle' ? '이력서 AI' : '말하고 있어요...'}
           </p>
         </div>
 
-        {/* 통화 중 transcript */}
-        {status === 'recording' && (
+        {step === 'recording' && (
           <div
             ref={transcriptBoxRef}
             className="w-full max-w-xs max-h-40 overflow-y-auto text-center px-4"
@@ -227,9 +348,8 @@ export default function CallPage({ params }: Props) {
         )}
       </div>
 
-      {/* 하단: 통화 버튼 */}
       <div className="flex flex-col items-center gap-3">
-        {status === 'idle' ? (
+        {step === 'idle' ? (
           <>
             <button
               onClick={startCall}

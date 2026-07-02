@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { processTranscript } from '@/lib/claude'
+import { processExperience, QA } from '@/lib/claude'
 
 export async function POST(req: NextRequest) {
-  const { session_id, workspace_id } = await req.json()
-  console.log('[process] session_id:', session_id, 'workspace_id:', workspace_id)
+  const { session_id, workspace_id, experience_name, follow_up_qas, date } = await req.json()
 
-  if (!session_id || !workspace_id) {
-    return NextResponse.json({ error: 'session_id, workspace_id 필요' }, { status: 400 })
+  if (!session_id || !workspace_id || !experience_name || !date) {
+    return NextResponse.json({ error: 'session_id, workspace_id, experience_name, date 필요' }, { status: 400 })
   }
 
   const { data: session, error: sessionError } = await supabaseAdmin
@@ -15,8 +14,6 @@ export async function POST(req: NextRequest) {
     .select('transcript')
     .eq('id', session_id)
     .single()
-
-  console.log('[process] session:', session, 'error:', sessionError)
 
   if (sessionError) {
     return NextResponse.json({ error: '세션을 찾을 수 없어요', detail: sessionError.message }, { status: 404 })
@@ -27,23 +24,21 @@ export async function POST(req: NextRequest) {
     .update({ status: 'processing' })
     .eq('id', session_id)
 
-  const items = await processTranscript(session.transcript)
+  const content = await processExperience(
+    session.transcript,
+    experience_name,
+    (follow_up_qas as QA[]) ?? [],
+    date
+  )
 
-  const rows = items.map((item) => ({
-    workspace_id,
-    session_id,
-    category: item.category,
-    content: item.content,
-    keywords: item.keywords,
-    job_tags: item.job_tags,
-  }))
+  const title = `${date}_${experience_name}`
 
   const { error: insertError } = await supabaseAdmin
-    .from('resume_items')
-    .insert(rows)
+    .from('experiences')
+    .insert({ workspace_id, session_id, title, content })
 
   if (insertError) {
-    return NextResponse.json({ error: '저장 실패' }, { status: 500 })
+    return NextResponse.json({ error: '저장 실패', detail: insertError.message }, { status: 500 })
   }
 
   await supabaseAdmin
@@ -51,5 +46,5 @@ export async function POST(req: NextRequest) {
     .update({ status: 'done' })
     .eq('id', session_id)
 
-  return NextResponse.json({ success: true, count: rows.length })
+  return NextResponse.json({ success: true })
 }

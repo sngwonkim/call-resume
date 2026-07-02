@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xxd /mnt/c/Users/gram/Desktop/zapdongsani/call_resume/call_resume.txt)",
+      "Bash(npm --version)",
+      "Bash(npx create-next-app@latest *)",
+      "Bash(npm install *)",
+      "Bash(mkdir -p /mnt/c/Users/gram/Desktop/zapdongsani/call_resume_app/app/\\\\[token\\\\]/call)",
+      "Bash(mkdir -p /mnt/c/Users/gram/Desktop/zapdongsani/call_resume_app/app/api/process)",
+      "Bash(mkdir -p /mnt/c/Users/gram/Desktop/zapdongsani/call_resume_app/app/api/send-link)",
+      "Bash(mkdir -p /mnt/c/Users/gram/Desktop/zapdongsani/call_resume_app/components)",
+      "Bash(mkdir -p /mnt/c/Users/gram/Desktop/zapdongsani/call_resume_app/lib)",
+      "Bash(npx tsc *)",
+      "Bash(rsync -av --exclude='node_modules' --exclude='.next' call_resume_app/ call_resume/)",
+      "Bash(npm uninstall *)",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(xargs cat)",
+      "Bash(kill 79523 80713)",
+      "Bash(gh auth *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git commit -m ' *)",
+      "WebFetch(domain:call-resume.vercel.app)",
+      "Bash(curl *)",
+      "Bash(nslookup ldkygmgqesrpxsmyxrwg.supabase.co)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git -C /mnt/c/Users/gram/Desktop/zapdongsani/call_resume status)",
+      "Bash(git -C /mnt/c/Users/gram/Desktop/zapdongsani/call_resume log --oneline -5)",
+      "Bash(git -C /mnt/c/Users/gram/Desktop/zapdongsani/call_resume log --oneline -3)"
+    ]
+  }
+}
